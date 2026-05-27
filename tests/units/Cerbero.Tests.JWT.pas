@@ -53,6 +53,16 @@ type
     procedure Decode_ValidToken_ReturnsClaims;
     [Test]
     procedure Decode_InvalidSignature_RaisesECerberoInvalidSignature;
+    [Test]
+    procedure Claims_NotBefore_ZeroWhenNotSet;
+    [Test]
+    procedure Claims_NotBefore_ReturnsTimestampWhenSet;
+    [Test]
+    procedure Claims_IsNotYetValid_TrueWhenNbfInFuture;
+    [Test]
+    procedure Claims_IsNotYetValid_FalseWhenNbfInPast;
+    [Test]
+    procedure Claims_IsNotYetValid_FalseWhenNbfAbsent;
   end;
 
 implementation
@@ -278,6 +288,56 @@ begin
     end,
     ECerberoInvalidSignature
   );
+end;
+
+procedure TCerberoJWTTests.Claims_NotBefore_ZeroWhenNotSet;
+var
+  LToken: string;
+  LClaims: ICerberoClaims;
+begin
+  LToken  := TCerbero.Token.Subject('u1').SignWith(SECRET);
+  LClaims := TCerbero.Decode(LToken, SECRET);
+  Assert.AreEqual(Int64(0), LClaims.NotBefore);
+end;
+
+procedure TCerberoJWTTests.Claims_NotBefore_ReturnsTimestampWhenSet;
+var
+  LToken: string;
+  LClaims: ICerberoClaims;
+begin
+  LToken  := TCerbero.Token.Subject('u1').NotBefore(120).SignWith(SECRET);
+  LClaims := TCerbero.Decode(LToken, SECRET);
+  Assert.IsTrue(LClaims.NotBefore > 0, 'NotBefore deve ser um unix timestamp positivo');
+end;
+
+procedure TCerberoJWTTests.Claims_IsNotYetValid_TrueWhenNbfInFuture;
+var
+  LToken: string;
+  LClaims: ICerberoClaims;
+begin
+  LToken  := TCerbero.Token.Subject('u1').NotBefore(120).SignWith(SECRET);
+  LClaims := TCerbero.Decode(LToken, SECRET);
+  Assert.IsTrue(LClaims.IsNotYetValid, 'Token com nbf no futuro ainda nao e valido');
+end;
+
+procedure TCerberoJWTTests.Claims_IsNotYetValid_FalseWhenNbfInPast;
+var
+  LToken: string;
+  LClaims: ICerberoClaims;
+begin
+  LToken  := TCerbero.Token.Subject('u1').NotBefore(-60).SignWith(SECRET);
+  LClaims := TCerbero.Decode(LToken, SECRET);
+  Assert.IsFalse(LClaims.IsNotYetValid, 'Token com nbf no passado ja e valido');
+end;
+
+procedure TCerberoJWTTests.Claims_IsNotYetValid_FalseWhenNbfAbsent;
+var
+  LToken: string;
+  LClaims: ICerberoClaims;
+begin
+  LToken  := TCerbero.Token.Subject('u1').SignWith(SECRET);
+  LClaims := TCerbero.Decode(LToken, SECRET);
+  Assert.IsFalse(LClaims.IsNotYetValid, 'Token sem nbf e considerado valido agora');
 end;
 
 end.

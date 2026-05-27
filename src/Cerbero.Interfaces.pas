@@ -10,7 +10,9 @@ type
     function Audience: string;
     function ExpiresAt: Int64;
     function IssuedAt: Int64;
+    function NotBefore: Int64;
     function IsExpired: Boolean;
+    function IsNotYetValid: Boolean;
     function Get(const AName: string): string;
     function GetInt(const AName: string): Int64;
     function GetBool(const AName: string): Boolean;

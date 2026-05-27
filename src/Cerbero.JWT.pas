@@ -27,6 +27,8 @@ type
     function Get(const AName: string): string;
     function GetInt(const AName: string): Int64;
     function GetBool(const AName: string): Boolean;
+    function NotBefore: Int64;
+    function IsNotYetValid: Boolean;
     function Has(const AName: string): Boolean;
   end;
 
@@ -172,6 +174,22 @@ begin
     Result := False
   else
     Result := NowAsUnix > LExp;
+end;
+
+function TCerberoClaims.NotBefore: Int64;
+begin
+  Result := JsonInt(CERBERO_CLAIM_NBF);
+end;
+
+function TCerberoClaims.IsNotYetValid: Boolean;
+var
+  LNbf: Int64;
+begin
+  LNbf := NotBefore;
+  if LNbf = 0 then
+    Result := False
+  else
+    Result := NowAsUnix < LNbf;
 end;
 
 function TCerberoClaims.Get(const AName: string): string;

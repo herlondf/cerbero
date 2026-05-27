@@ -3,15 +3,20 @@ unit Cerbero.Middleware.Pegasus;
 // Middleware Pegasus para autenticacao JWT.
 // Requer Pegasus no search path.
 //
-// Uso:
-//   App.Use(TCerberoMiddleware.JWT('meu-secret'));
+// --- JWT (apenas valida) ---
+//   App.Use(TCerberoMiddleware.JWT('secret'));
 //
-//   // Para rotas especificas:
-//   App.Get('/perfil', TCerberoMiddleware.JWT('meu-secret'),
+// --- JWTWithClaims (valida e injeta claims no request) ---
+//   App.Get('/me',
+//     TCerberoMiddleware.JWTWithClaims('secret',
+//       procedure(Req: TPegasusRequest; Claims: ICerberoClaims)
+//       begin
+//         Req.Params.AddOrSet('jwt_sub',  Claims.Subject);
+//         Req.Params.AddOrSet('jwt_role', Claims.Get('role'));
+//       end),
 //     procedure(Req: TPegasusRequest; Res: TPegasusResponse)
 //     begin
-//       LClaims := TCerbero.Decode(Req.Headers.GetOrDefault('Authorization','').Substring(7), 'meu-secret');
-//       Res.Send(LClaims.Subject);
+//       Res.Send(Req.Params.GetOrDefault('jwt_sub', ''));
 //     end);
 
 interface
@@ -21,15 +26,26 @@ uses
   Pegasus.Callback,
   Pegasus.Request,
   Pegasus.Response,
-  Pegasus.Proc;
+  Pegasus.Proc,
+  Cerbero.Interfaces;
 
 type
+  TCerberoClaimsInjector = reference to procedure(
+    Req: TPegasusRequest; Claims: ICerberoClaims);
+
   TCerberoMiddleware = class
   public
     /// Valida o Bearer JWT no header Authorization.
-    /// - Token ausente ou invalido: responde 401 e interrompe a chain.
-    /// - Token valido: chama Next e a requisicao prossegue.
+    /// Token ausente/invalido: responde 401 e interrompe a chain.
+    /// Token valido: chama Next.
     class function JWT(const ASecret: string): TPegasusCallback; static;
+
+    /// Igual ao JWT, mas apos validar chama AOnValid com o request e as claims
+    /// antes de invocar Next. Use para armazenar claims no Req.Params ou
+    /// qualquer outro mecanismo de contexto da sua aplicacao.
+    class function JWTWithClaims(
+      const ASecret: string;
+      const AOnValid: TCerberoClaimsInjector): TPegasusCallback; static;
   end;
 
 implementation
@@ -44,31 +60,67 @@ const
   MSG_UNAUTHORIZED     = 'Unauthorized';
   HEADER_AUTHORIZATION = 'Authorization';
 
+function ExtractBearerToken(const AAuthHeader: string; out AToken: string): Boolean;
+begin
+  Result := AAuthHeader.StartsWith(BEARER_PREFIX, True);
+  if Result then
+    AToken := AAuthHeader.Substring(Length(BEARER_PREFIX));
+end;
+
+procedure SendUnauthorized(Res: TPegasusResponse);
+begin
+  Res.Status(HTTP_UNAUTHORIZED).Send(MSG_UNAUTHORIZED);
+end;
+
 class function TCerberoMiddleware.JWT(const ASecret: string): TPegasusCallback;
 begin
   Result :=
     procedure(Req: TPegasusRequest; Res: TPegasusResponse; Next: TNextProc)
     var
-      LAuth: string;
       LToken: string;
     begin
-      LAuth := Req.Headers.GetOrDefault(HEADER_AUTHORIZATION, '');
-      if not LAuth.StartsWith(BEARER_PREFIX, True) then
+      if not ExtractBearerToken(Req.Headers.GetOrDefault(HEADER_AUTHORIZATION, ''), LToken) then
       begin
-        Res.Status(HTTP_UNAUTHORIZED).Send(MSG_UNAUTHORIZED);
+        SendUnauthorized(Res);
         Exit;
       end;
-      LToken := LAuth.Substring(Length(BEARER_PREFIX));
       try
         if not TCerbero.Verify(LToken).WithSecret(ASecret).IsValid then
         begin
-          Res.Status(HTTP_UNAUTHORIZED).Send(MSG_UNAUTHORIZED);
+          SendUnauthorized(Res);
           Exit;
         end;
       except
-        Res.Status(HTTP_UNAUTHORIZED).Send(MSG_UNAUTHORIZED);
+        SendUnauthorized(Res);
         Exit;
       end;
+      Next;
+    end;
+end;
+
+class function TCerberoMiddleware.JWTWithClaims(
+  const ASecret: string;
+  const AOnValid: TCerberoClaimsInjector): TPegasusCallback;
+begin
+  Result :=
+    procedure(Req: TPegasusRequest; Res: TPegasusResponse; Next: TNextProc)
+    var
+      LToken: string;
+      LClaims: ICerberoClaims;
+    begin
+      if not ExtractBearerToken(Req.Headers.GetOrDefault(HEADER_AUTHORIZATION, ''), LToken) then
+      begin
+        SendUnauthorized(Res);
+        Exit;
+      end;
+      try
+        LClaims := TCerbero.Decode(LToken, ASecret);
+      except
+        SendUnauthorized(Res);
+        Exit;
+      end;
+      if Assigned(AOnValid) then
+        AOnValid(Req, LClaims);
       Next;
     end;
 end;
