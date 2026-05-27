@@ -408,6 +408,11 @@ begin
 end;
 
 function TCerberoJWTVerifier.Claims: ICerberoClaims;
+var
+  LPayload: TJSONObject;
+  LNow: Int64;
+  LExp: TJSONValue;
+  LNbf: TJSONValue;
 begin
   if FSecret = '' then
     raise ECerberoMissingSecret.Create('Secret not set — call WithSecret first');
@@ -415,7 +420,20 @@ begin
     raise ECerberoInvalidToken.Create('Malformed JWT token');
   if ComputeSignature(FParts[0], FParts[1]) <> FParts[2] then
     raise ECerberoInvalidSignature.Create('JWT signature validation failed');
-  Result := TCerberoClaims.Create(ParsePayload);
+  LPayload := ParsePayload;
+  try
+    LNow := NowAsUnix;
+    LExp := LPayload.GetValue(CERBERO_CLAIM_EXP);
+    if Assigned(LExp) and (LNow > (LExp as TJSONNumber).AsInt64) then
+      raise ECerberoExpiredToken.Create('JWT token has expired');
+    LNbf := LPayload.GetValue(CERBERO_CLAIM_NBF);
+    if Assigned(LNbf) and (LNow < (LNbf as TJSONNumber).AsInt64) then
+      raise ECerberoNotYetValidToken.Create('JWT token is not yet valid');
+  except
+    LPayload.Free;
+    raise;
+  end;
+  Result := TCerberoClaims.Create(LPayload);
 end;
 
 end.

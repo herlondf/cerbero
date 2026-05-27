@@ -54,11 +54,13 @@ type
     [Test]
     procedure Decode_InvalidSignature_RaisesECerberoInvalidSignature;
     [Test]
+    procedure Claims_ExpiredToken_RaisesECerberoExpiredToken;
+    [Test]
+    procedure Claims_NotYetValidToken_RaisesECerberoNotYetValidToken;
+    [Test]
     procedure Claims_NotBefore_ZeroWhenNotSet;
     [Test]
     procedure Claims_NotBefore_ReturnsTimestampWhenSet;
-    [Test]
-    procedure Claims_IsNotYetValid_TrueWhenNbfInFuture;
     [Test]
     procedure Claims_IsNotYetValid_FalseWhenNbfInPast;
     [Test]
@@ -111,12 +113,16 @@ end;
 procedure TCerberoJWTTests.Token_WithNegativeExpiry_IsExpired;
 var
   LToken: string;
-  LClaims: ICerberoClaims;
 begin
   // ExpiresIn(-10) = expirou 10 segundos atras
-  LToken  := TCerbero.Token.Subject('u1').ExpiresIn(-10).SignWith(SECRET);
-  LClaims := TCerbero.Verify(LToken).WithSecret(SECRET).Claims;
-  Assert.IsTrue(LClaims.IsExpired, 'Token com expiry no passado deve estar expirado');
+  LToken := TCerbero.Token.Subject('u1').ExpiresIn(-10).SignWith(SECRET);
+  // IsValid retorna false
+  Assert.IsFalse(TCerbero.Verify(LToken).WithSecret(SECRET).IsValid);
+  // Claims lanca ECerberoExpiredToken
+  Assert.WillRaise(
+    procedure begin TCerbero.Decode(LToken, SECRET); end,
+    ECerberoExpiredToken
+  );
 end;
 
 procedure TCerberoJWTTests.Token_NoExpiry_ExpiresAtIsZeroAndNotExpired;
@@ -290,6 +296,28 @@ begin
   );
 end;
 
+procedure TCerberoJWTTests.Claims_ExpiredToken_RaisesECerberoExpiredToken;
+var
+  LToken: string;
+begin
+  LToken := TCerbero.Token.Subject('u1').ExpiresIn(-1).SignWith(SECRET);
+  Assert.WillRaise(
+    procedure begin TCerbero.Decode(LToken, SECRET); end,
+    ECerberoExpiredToken
+  );
+end;
+
+procedure TCerberoJWTTests.Claims_NotYetValidToken_RaisesECerberoNotYetValidToken;
+var
+  LToken: string;
+begin
+  LToken := TCerbero.Token.Subject('u1').NotBefore(120).SignWith(SECRET);
+  Assert.WillRaise(
+    procedure begin TCerbero.Decode(LToken, SECRET); end,
+    ECerberoNotYetValidToken
+  );
+end;
+
 procedure TCerberoJWTTests.Claims_NotBefore_ZeroWhenNotSet;
 var
   LToken: string;
@@ -305,19 +333,10 @@ var
   LToken: string;
   LClaims: ICerberoClaims;
 begin
-  LToken  := TCerbero.Token.Subject('u1').NotBefore(120).SignWith(SECRET);
+  // NotBefore(-60) = tornou-se valido 60 segundos atras — pode chamar Decode
+  LToken  := TCerbero.Token.Subject('u1').NotBefore(-60).SignWith(SECRET);
   LClaims := TCerbero.Decode(LToken, SECRET);
   Assert.IsTrue(LClaims.NotBefore > 0, 'NotBefore deve ser um unix timestamp positivo');
-end;
-
-procedure TCerberoJWTTests.Claims_IsNotYetValid_TrueWhenNbfInFuture;
-var
-  LToken: string;
-  LClaims: ICerberoClaims;
-begin
-  LToken  := TCerbero.Token.Subject('u1').NotBefore(120).SignWith(SECRET);
-  LClaims := TCerbero.Decode(LToken, SECRET);
-  Assert.IsTrue(LClaims.IsNotYetValid, 'Token com nbf no futuro ainda nao e valido');
 end;
 
 procedure TCerberoJWTTests.Claims_IsNotYetValid_FalseWhenNbfInPast;

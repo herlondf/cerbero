@@ -9,6 +9,7 @@ type
   ECerberoException        = class(Exception);
   ECerberoInvalidToken     = class(ECerberoException);
   ECerberoExpiredToken     = class(ECerberoException);
+  ECerberoNotYetValidToken = class(ECerberoException);
   ECerberoInvalidSignature = class(ECerberoException);
   ECerberoMissingSecret    = class(ECerberoException);
 
