@@ -35,6 +35,7 @@ type
   TCerberoJWTBuilder = class(TInterfacedObject, ICerberoTokenBuilder)
   private
     FPayload: TJSONObject;
+    procedure SetPair(const AKey: string; AValue: TJSONValue);
     function BuildHeader: string;
     function BuildPayload: string;
   public
@@ -64,6 +65,7 @@ type
     function WithSecret(const ASecret: string): ICerberoVerifier;
     function IsValid: Boolean;
     function Claims: ICerberoClaims;
+    function UnsafeClaims: ICerberoClaims;
   end;
 
 function Base64URLEncode(const ABytes: TBytes): string;
@@ -223,6 +225,16 @@ begin
   FPayload := TJSONObject.Create;
 end;
 
+procedure TCerberoJWTBuilder.SetPair(const AKey: string; AValue: TJSONValue);
+var
+  LRemoved: TJSONPair;
+begin
+  LRemoved := FPayload.RemovePair(AKey);
+  if Assigned(LRemoved) then
+    LRemoved.Free;
+  FPayload.AddPair(AKey, AValue);
+end;
+
 destructor TCerberoJWTBuilder.Destroy;
 begin
   FPayload.Free;
@@ -252,52 +264,52 @@ end;
 
 function TCerberoJWTBuilder.Subject(const AValue: string): ICerberoTokenBuilder;
 begin
-  FPayload.AddPair(CERBERO_CLAIM_SUB, AValue);
+  SetPair(CERBERO_CLAIM_SUB, TJSONString.Create(AValue));
   Result := Self;
 end;
 
 function TCerberoJWTBuilder.Issuer(const AValue: string): ICerberoTokenBuilder;
 begin
-  FPayload.AddPair(CERBERO_CLAIM_ISS, AValue);
+  SetPair(CERBERO_CLAIM_ISS, TJSONString.Create(AValue));
   Result := Self;
 end;
 
 function TCerberoJWTBuilder.Audience(const AValue: string): ICerberoTokenBuilder;
 begin
-  FPayload.AddPair(CERBERO_CLAIM_AUD, AValue);
+  SetPair(CERBERO_CLAIM_AUD, TJSONString.Create(AValue));
   Result := Self;
 end;
 
 function TCerberoJWTBuilder.ExpiresIn(ASeconds: Integer): ICerberoTokenBuilder;
 begin
-  FPayload.AddPair(CERBERO_CLAIM_EXP, TJSONNumber.Create(NowAsUnix + ASeconds));
+  SetPair(CERBERO_CLAIM_EXP, TJSONNumber.Create(NowAsUnix + ASeconds));
   Result := Self;
 end;
 
 function TCerberoJWTBuilder.NotBefore(ASeconds: Integer): ICerberoTokenBuilder;
 begin
-  FPayload.AddPair(CERBERO_CLAIM_NBF, TJSONNumber.Create(NowAsUnix + ASeconds));
+  SetPair(CERBERO_CLAIM_NBF, TJSONNumber.Create(NowAsUnix + ASeconds));
   Result := Self;
 end;
 
 function TCerberoJWTBuilder.Claim(const AName, AValue: string): ICerberoTokenBuilder;
 begin
-  FPayload.AddPair(AName, AValue);
+  SetPair(AName, TJSONString.Create(AValue));
   Result := Self;
 end;
 
 function TCerberoJWTBuilder.ClaimInt(const AName: string; AValue: Int64): ICerberoTokenBuilder;
 begin
-  FPayload.AddPair(AName, TJSONNumber.Create(AValue));
+  SetPair(AName, TJSONNumber.Create(AValue));
   Result := Self;
 end;
 
 function TCerberoJWTBuilder.ClaimBool(const AName: string; AValue: Boolean): ICerberoTokenBuilder;
 begin
   if AValue then
-    FPayload.AddPair(AName, TJSONTrue.Create)
+    SetPair(AName, TJSONTrue.Create)
   else
-    FPayload.AddPair(AName, TJSONFalse.Create);
+    SetPair(AName, TJSONFalse.Create);
   Result := Self;
 end;
 
@@ -434,6 +446,17 @@ begin
     raise;
   end;
   Result := TCerberoClaims.Create(LPayload);
+end;
+
+function TCerberoJWTVerifier.UnsafeClaims: ICerberoClaims;
+begin
+  if FSecret = '' then
+    raise ECerberoMissingSecret.Create('Secret not set — call WithSecret first');
+  if not SplitToken then
+    raise ECerberoInvalidToken.Create('Malformed JWT token');
+  if ComputeSignature(FParts[0], FParts[1]) <> FParts[2] then
+    raise ECerberoInvalidSignature.Create('JWT signature validation failed');
+  Result := TCerberoClaims.Create(ParsePayload);
 end;
 
 end.

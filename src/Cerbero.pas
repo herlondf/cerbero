@@ -32,6 +32,14 @@ type
     ///   LClaims := TCerbero.Decode(LToken, 'secret');
     ///   WriteLn(LClaims.Subject);
     class function Decode(const AToken, ASecret: string): ICerberoClaims; static;
+
+    /// Valida apenas a assinatura e retorna os claims sem verificar exp/nbf.
+    /// Util para renovacao de tokens: le o subject de um token expirado sem lancar
+    /// ECerberoExpiredToken. Ainda lanca ECerberoInvalidSignature/Token/MissingSecret.
+    /// Exemplo:
+    ///   LClaims := TCerbero.UnsafeDecode(LExpiredToken, 'secret');
+    ///   LNewToken := TCerbero.Token.Subject(LClaims.Subject).ExpiresIn(3600).SignWith('secret');
+    class function UnsafeDecode(const AToken, ASecret: string): ICerberoClaims; static;
   end;
 
 implementation
@@ -49,6 +57,11 @@ end;
 class function TCerbero.Decode(const AToken, ASecret: string): ICerberoClaims;
 begin
   Result := TCerberoJWTVerifier.Create(AToken).WithSecret(ASecret).Claims;
+end;
+
+class function TCerbero.UnsafeDecode(const AToken, ASecret: string): ICerberoClaims;
+begin
+  Result := TCerberoJWTVerifier.Create(AToken).WithSecret(ASecret).UnsafeClaims;
 end;
 
 end.

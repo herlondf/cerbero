@@ -65,6 +65,18 @@ type
     procedure Claims_IsNotYetValid_FalseWhenNbfInPast;
     [Test]
     procedure Claims_IsNotYetValid_FalseWhenNbfAbsent;
+    [Test]
+    procedure UnsafeClaims_ExpiredToken_ReturnsClaims;
+    [Test]
+    procedure UnsafeClaims_NotYetValidToken_ReturnsClaims;
+    [Test]
+    procedure UnsafeClaims_InvalidSignature_RaisesECerberoInvalidSignature;
+    [Test]
+    procedure Builder_DuplicateSubject_LastCallWins;
+    [Test]
+    procedure Builder_DuplicateClaim_LastCallWins;
+    [Test]
+    procedure Builder_DuplicateExpiresIn_LastCallWins;
   end;
 
 implementation
@@ -357,6 +369,74 @@ begin
   LToken  := TCerbero.Token.Subject('u1').SignWith(SECRET);
   LClaims := TCerbero.Decode(LToken, SECRET);
   Assert.IsFalse(LClaims.IsNotYetValid, 'Token sem nbf e considerado valido agora');
+end;
+
+procedure TCerberoJWTTests.UnsafeClaims_ExpiredToken_ReturnsClaims;
+var
+  LToken: string;
+  LClaims: ICerberoClaims;
+begin
+  LToken  := TCerbero.Token.Subject('refresh-user').ExpiresIn(-10).SignWith(SECRET);
+  LClaims := TCerbero.UnsafeDecode(LToken, SECRET);
+  Assert.AreEqual('refresh-user', LClaims.Subject);
+  Assert.IsTrue(LClaims.IsExpired, 'Token deve estar marcado como expirado');
+end;
+
+procedure TCerberoJWTTests.UnsafeClaims_NotYetValidToken_ReturnsClaims;
+var
+  LToken: string;
+  LClaims: ICerberoClaims;
+begin
+  LToken  := TCerbero.Token.Subject('u1').NotBefore(120).SignWith(SECRET);
+  LClaims := TCerbero.UnsafeDecode(LToken, SECRET);
+  Assert.IsTrue(LClaims.IsNotYetValid, 'Token deve estar marcado como ainda nao valido');
+end;
+
+procedure TCerberoJWTTests.UnsafeClaims_InvalidSignature_RaisesECerberoInvalidSignature;
+var
+  LToken: string;
+begin
+  LToken := TCerbero.Token.Subject('u1').SignWith(SECRET);
+  Assert.WillRaise(
+    procedure
+    begin
+      TCerbero.UnsafeDecode(LToken, 'wrong-secret');
+    end,
+    ECerberoInvalidSignature
+  );
+end;
+
+procedure TCerberoJWTTests.Builder_DuplicateSubject_LastCallWins;
+var
+  LToken: string;
+  LClaims: ICerberoClaims;
+begin
+  LToken  := TCerbero.Token.Subject('first').Subject('second').SignWith(SECRET);
+  LClaims := TCerbero.Decode(LToken, SECRET);
+  Assert.AreEqual('second', LClaims.Subject);
+end;
+
+procedure TCerberoJWTTests.Builder_DuplicateClaim_LastCallWins;
+var
+  LToken: string;
+  LClaims: ICerberoClaims;
+begin
+  LToken  := TCerbero.Token.Subject('u1').Claim('role', 'user').Claim('role', 'admin').SignWith(SECRET);
+  LClaims := TCerbero.Decode(LToken, SECRET);
+  Assert.AreEqual('admin', LClaims.Get('role'));
+end;
+
+procedure TCerberoJWTTests.Builder_DuplicateExpiresIn_LastCallWins;
+var
+  LToken: string;
+  LClaims: ICerberoClaims;
+begin
+  // Primeiro ExpiresIn expira imediatamente; segundo da 1 hora — token deve ser valido
+  LToken := TCerbero.Token.Subject('u1').ExpiresIn(-1).ExpiresIn(3600).SignWith(SECRET);
+  Assert.IsTrue(TCerbero.Verify(LToken).WithSecret(SECRET).IsValid,
+    'Ultimo ExpiresIn(3600) deve prevalecer');
+  LClaims := TCerbero.Decode(LToken, SECRET);
+  Assert.IsFalse(LClaims.IsExpired);
 end;
 
 end.

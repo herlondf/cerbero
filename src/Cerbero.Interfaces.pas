@@ -36,7 +36,10 @@ type
     ['{C3D4E5F6-A7B8-4C9D-0E1F-2A3B4C5D6E7F}']
     function WithSecret(const ASecret: string): ICerberoVerifier;
     function IsValid: Boolean;
+    /// Valida assinatura e retorna claims — lanca ECerberoInvalidSignature/Token se invalido.
+    /// Nao verifica exp nem nbf: util para renovacao de tokens expirados.
     function Claims: ICerberoClaims;
+    function UnsafeClaims: ICerberoClaims;
   end;
 
 implementation
