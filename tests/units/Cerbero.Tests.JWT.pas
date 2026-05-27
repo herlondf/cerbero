@@ -45,6 +45,14 @@ type
     procedure Claims_IntAndBoolRoundTrip;
     [Test]
     procedure Verify_MissingSecret_RaisesECerberoMissingSecret;
+    [Test]
+    procedure Verify_NotBeforeInFuture_IsValidFalse;
+    [Test]
+    procedure Verify_NotBeforeInPast_IsValidTrue;
+    [Test]
+    procedure Decode_ValidToken_ReturnsClaims;
+    [Test]
+    procedure Decode_InvalidSignature_RaisesECerberoInvalidSignature;
   end;
 
 implementation
@@ -224,6 +232,51 @@ begin
       TCerbero.Verify(LToken).IsValid;
     end,
     ECerberoMissingSecret
+  );
+end;
+
+procedure TCerberoJWTTests.Verify_NotBeforeInFuture_IsValidFalse;
+var
+  LToken: string;
+begin
+  // NotBefore(60) = valido somente daqui a 60 segundos
+  LToken := TCerbero.Token.Subject('u1').NotBefore(60).SignWith(SECRET);
+  Assert.IsFalse(TCerbero.Verify(LToken).WithSecret(SECRET).IsValid,
+    'Token com nbf no futuro nao deve ser valido agora');
+end;
+
+procedure TCerberoJWTTests.Verify_NotBeforeInPast_IsValidTrue;
+var
+  LToken: string;
+begin
+  // NotBefore(-60) = tornou-se valido 60 segundos atras
+  LToken := TCerbero.Token.Subject('u1').NotBefore(-60).SignWith(SECRET);
+  Assert.IsTrue(TCerbero.Verify(LToken).WithSecret(SECRET).IsValid,
+    'Token com nbf no passado deve ser valido agora');
+end;
+
+procedure TCerberoJWTTests.Decode_ValidToken_ReturnsClaims;
+var
+  LToken: string;
+  LClaims: ICerberoClaims;
+begin
+  LToken  := TCerbero.Token.Subject('decode-test').Issuer('app').SignWith(SECRET);
+  LClaims := TCerbero.Decode(LToken, SECRET);
+  Assert.AreEqual('decode-test', LClaims.Subject);
+  Assert.AreEqual('app', LClaims.Issuer);
+end;
+
+procedure TCerberoJWTTests.Decode_InvalidSignature_RaisesECerberoInvalidSignature;
+var
+  LToken: string;
+begin
+  LToken := TCerbero.Token.Subject('u1').SignWith(SECRET);
+  Assert.WillRaise(
+    procedure
+    begin
+      TCerbero.Decode(LToken, 'wrong-secret');
+    end,
+    ECerberoInvalidSignature
   );
 end;
 

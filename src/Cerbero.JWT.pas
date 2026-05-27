@@ -360,6 +360,8 @@ function TCerberoJWTVerifier.IsValid: Boolean;
 var
   LPayload: TJSONObject;
   LExp: TJSONValue;
+  LNbf: TJSONValue;
+  LNow: Int64;
 begin
   Result := False;
   if FSecret = '' then
@@ -371,11 +373,14 @@ begin
   try
     LPayload := ParsePayload;
     try
+      LNow := NowAsUnix;
       LExp := LPayload.GetValue(CERBERO_CLAIM_EXP);
-      if Assigned(LExp) then
-        Result := NowAsUnix <= (LExp as TJSONNumber).AsInt64
-      else
-        Result := True;
+      if Assigned(LExp) and (LNow > (LExp as TJSONNumber).AsInt64) then
+        Exit; // expirado
+      LNbf := LPayload.GetValue(CERBERO_CLAIM_NBF);
+      if Assigned(LNbf) and (LNow < (LNbf as TJSONNumber).AsInt64) then
+        Exit; // ainda nao valido
+      Result := True;
     finally
       LPayload.Free;
     end;
