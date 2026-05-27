@@ -30,6 +30,7 @@ type
     function NotBefore: Int64;
     function IsNotYetValid: Boolean;
     function Has(const AName: string): Boolean;
+    procedure CopyTo(const ABuilder: ICerberoTokenBuilder);
   end;
 
   TCerberoJWTBuilder = class(TInterfacedObject, ICerberoTokenBuilder)
@@ -56,6 +57,7 @@ type
   private
     FToken: string;
     FSecret: string;
+    FLeeway: Integer;
     FParts: TArray<string>;
     function SplitToken: Boolean;
     function ComputeSignature(const AHeaderB64, APayloadB64: string): string;
@@ -63,6 +65,7 @@ type
   public
     constructor Create(const AToken: string);
     function WithSecret(const ASecret: string): ICerberoVerifier;
+    function WithLeeway(ASeconds: Integer): ICerberoVerifier;
     function IsValid: Boolean;
     function Claims: ICerberoClaims;
     function UnsafeClaims: ICerberoClaims;
@@ -217,6 +220,43 @@ begin
   Result := Assigned(FPayload.GetValue(AName));
 end;
 
+procedure TCerberoClaims.CopyTo(const ABuilder: ICerberoTokenBuilder);
+const
+  TEMPORAL_CLAIMS: array[0..2] of string = (
+    CERBERO_CLAIM_EXP, CERBERO_CLAIM_NBF, CERBERO_CLAIM_IAT
+  );
+var
+  I, J: Integer;
+  LPair: TJSONPair;
+  LKey: string;
+  LVal: TJSONValue;
+  LSkip: Boolean;
+begin
+  for I := 0 to FPayload.Count - 1 do
+  begin
+    LPair := FPayload.Pairs[I];
+    LKey  := LPair.JsonString.Value;
+    LSkip := False;
+    for J := Low(TEMPORAL_CLAIMS) to High(TEMPORAL_CLAIMS) do
+      if LKey = TEMPORAL_CLAIMS[J] then
+      begin
+        LSkip := True;
+        Break;
+      end;
+    if LSkip then
+      Continue;
+    LVal := LPair.JsonValue;
+    if LVal is TJSONNumber then
+      ABuilder.ClaimInt(LKey, (LVal as TJSONNumber).AsInt64)
+    else if LVal is TJSONTrue then
+      ABuilder.ClaimBool(LKey, True)
+    else if LVal is TJSONFalse then
+      ABuilder.ClaimBool(LKey, False)
+    else
+      ABuilder.Claim(LKey, LVal.Value);
+  end;
+end;
+
 { TCerberoJWTBuilder }
 
 constructor TCerberoJWTBuilder.Create;
@@ -340,12 +380,19 @@ end;
 constructor TCerberoJWTVerifier.Create(const AToken: string);
 begin
   inherited Create;
-  FToken := AToken;
+  FToken  := AToken;
+  FLeeway := 0;
 end;
 
 function TCerberoJWTVerifier.WithSecret(const ASecret: string): ICerberoVerifier;
 begin
   FSecret := ASecret;
+  Result := Self;
+end;
+
+function TCerberoJWTVerifier.WithLeeway(ASeconds: Integer): ICerberoVerifier;
+begin
+  FLeeway := ASeconds;
   Result := Self;
 end;
 
@@ -405,10 +452,10 @@ begin
     try
       LNow := NowAsUnix;
       LExp := LPayload.GetValue(CERBERO_CLAIM_EXP);
-      if Assigned(LExp) and (LNow > (LExp as TJSONNumber).AsInt64) then
+      if Assigned(LExp) and (LNow > (LExp as TJSONNumber).AsInt64 + FLeeway) then
         Exit; // expirado
       LNbf := LPayload.GetValue(CERBERO_CLAIM_NBF);
-      if Assigned(LNbf) and (LNow < (LNbf as TJSONNumber).AsInt64) then
+      if Assigned(LNbf) and (LNow < (LNbf as TJSONNumber).AsInt64 - FLeeway) then
         Exit; // ainda nao valido
       Result := True;
     finally
@@ -436,10 +483,10 @@ begin
   try
     LNow := NowAsUnix;
     LExp := LPayload.GetValue(CERBERO_CLAIM_EXP);
-    if Assigned(LExp) and (LNow > (LExp as TJSONNumber).AsInt64) then
+    if Assigned(LExp) and (LNow > (LExp as TJSONNumber).AsInt64 + FLeeway) then
       raise ECerberoExpiredToken.Create('JWT token has expired');
     LNbf := LPayload.GetValue(CERBERO_CLAIM_NBF);
-    if Assigned(LNbf) and (LNow < (LNbf as TJSONNumber).AsInt64) then
+    if Assigned(LNbf) and (LNow < (LNbf as TJSONNumber).AsInt64 - FLeeway) then
       raise ECerberoNotYetValidToken.Create('JWT token is not yet valid');
   except
     LPayload.Free;

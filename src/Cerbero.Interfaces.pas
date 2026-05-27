@@ -17,6 +17,10 @@ type
     function GetInt(const AName: string): Int64;
     function GetBool(const AName: string): Boolean;
     function Has(const AName: string): Boolean;
+    /// Copia todas as claims nao-temporais (sub, iss, aud e claims customizados)
+    /// para um builder, preservando os tipos (string, int, bool).
+    /// Nao copia exp, nbf nem iat — o builder emite novos valores temporais.
+    procedure CopyTo(const ABuilder: ICerberoTokenBuilder);
   end;
 
   ICerberoTokenBuilder = interface
@@ -35,6 +39,9 @@ type
   ICerberoVerifier = interface
     ['{C3D4E5F6-A7B8-4C9D-0E1F-2A3B4C5D6E7F}']
     function WithSecret(const ASecret: string): ICerberoVerifier;
+    /// Tolerancia em segundos aplicada a exp e nbf (default: 0).
+    /// Util para absorver deriva de relogio entre servidores.
+    function WithLeeway(ASeconds: Integer): ICerberoVerifier;
     function IsValid: Boolean;
     /// Valida assinatura e retorna claims — lanca ECerberoInvalidSignature/Token se invalido.
     /// Nao verifica exp nem nbf: util para renovacao de tokens expirados.

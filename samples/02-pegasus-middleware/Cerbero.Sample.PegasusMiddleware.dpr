@@ -14,6 +14,7 @@ program Cerbero.Sample.PegasusMiddleware;
 
 uses
   System.SysUtils,
+  System.JSON,
   Pegasus,
   Pegasus.Request,
   Pegasus.Response,
@@ -39,6 +40,7 @@ begin
       procedure(Req: TPegasusRequest; Res: TPegasusResponse)
       var
         LToken: string;
+        LBody: TJSONObject;
       begin
         LToken := TCerbero.Token
           .Subject('user-demo')
@@ -46,7 +48,13 @@ begin
           .Claim('role', 'user')
           .ExpiresIn(3600)
           .SignWith(SECRET);
-        Res.Send('{"token":"' + LToken + '"}');
+        LBody := TJSONObject.Create;
+        try
+          LBody.AddPair('token', LToken);
+          Res.Send(LBody.ToJSON);
+        finally
+          LBody.Free;
+        end;
       end);
 
     // --- Rota protegida: usa JWTWithClaims para injetar subject no Params ---
@@ -61,10 +69,18 @@ begin
       var
         LSub: string;
         LRole: string;
+        LBody: TJSONObject;
       begin
         LSub  := Req.Params.GetOrDefault('jwt_sub',  '');
         LRole := Req.Params.GetOrDefault('jwt_role', '');
-        Res.Send('{"subject":"' + LSub + '","role":"' + LRole + '"}');
+        LBody := TJSONObject.Create;
+        try
+          LBody.AddPair('subject', LSub);
+          LBody.AddPair('role',    LRole);
+          Res.Send(LBody.ToJSON);
+        finally
+          LBody.Free;
+        end;
       end);
 
     // --- Rota publica: sem autenticacao ---

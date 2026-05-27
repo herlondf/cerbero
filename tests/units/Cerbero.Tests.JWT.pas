@@ -77,6 +77,18 @@ type
     procedure Builder_DuplicateClaim_LastCallWins;
     [Test]
     procedure Builder_DuplicateExpiresIn_LastCallWins;
+    [Test]
+    procedure Leeway_ExpiredByLessThanLeeway_IsValidTrue;
+    [Test]
+    procedure Leeway_ExpiredByMoreThanLeeway_IsValidFalse;
+    [Test]
+    procedure Leeway_NbfInFutureWithinLeeway_IsValidTrue;
+    [Test]
+    procedure Refresh_ExpiredToken_NewTokenIsValid;
+    [Test]
+    procedure Refresh_PreservesSubjectAndCustomClaims;
+    [Test]
+    procedure Refresh_InvalidSignature_RaisesECerberoInvalidSignature;
   end;
 
 implementation
@@ -437,6 +449,88 @@ begin
     'Ultimo ExpiresIn(3600) deve prevalecer');
   LClaims := TCerbero.Decode(LToken, SECRET);
   Assert.IsFalse(LClaims.IsExpired);
+end;
+
+procedure TCerberoJWTTests.Leeway_ExpiredByLessThanLeeway_IsValidTrue;
+var
+  LToken: string;
+begin
+  // Expirou ha 5s; leeway de 30s deve absorver
+  LToken := TCerbero.Token.Subject('u1').ExpiresIn(-5).SignWith(SECRET);
+  Assert.IsTrue(
+    TCerbero.Verify(LToken).WithSecret(SECRET).WithLeeway(30).IsValid,
+    'Token expirado dentro do leeway deve ser aceito'
+  );
+end;
+
+procedure TCerberoJWTTests.Leeway_ExpiredByMoreThanLeeway_IsValidFalse;
+var
+  LToken: string;
+begin
+  // Expirou ha 60s; leeway de 10s nao e suficiente
+  LToken := TCerbero.Token.Subject('u1').ExpiresIn(-60).SignWith(SECRET);
+  Assert.IsFalse(
+    TCerbero.Verify(LToken).WithSecret(SECRET).WithLeeway(10).IsValid,
+    'Token expirado alem do leeway deve ser rejeitado'
+  );
+end;
+
+procedure TCerberoJWTTests.Leeway_NbfInFutureWithinLeeway_IsValidTrue;
+var
+  LToken: string;
+begin
+  // nbf daqui a 5s; leeway de 30s deve absorver
+  LToken := TCerbero.Token.Subject('u1').NotBefore(5).SignWith(SECRET);
+  Assert.IsTrue(
+    TCerbero.Verify(LToken).WithSecret(SECRET).WithLeeway(30).IsValid,
+    'Token com nbf dentro do leeway deve ser aceito'
+  );
+end;
+
+procedure TCerberoJWTTests.Refresh_ExpiredToken_NewTokenIsValid;
+var
+  LExpired: string;
+  LNew: string;
+begin
+  LExpired := TCerbero.Token.Subject('u1').ExpiresIn(-60).SignWith(SECRET);
+  LNew     := TCerbero.Refresh(LExpired, SECRET, 3600);
+  Assert.IsTrue(TCerbero.Verify(LNew).WithSecret(SECRET).IsValid,
+    'Token renovado deve ser valido');
+end;
+
+procedure TCerberoJWTTests.Refresh_PreservesSubjectAndCustomClaims;
+var
+  LExpired: string;
+  LNew: string;
+  LClaims: ICerberoClaims;
+begin
+  LExpired := TCerbero.Token
+    .Subject('user-refresh')
+    .Issuer('myapp')
+    .Claim('role', 'admin')
+    .ClaimInt('level', 5)
+    .ClaimBool('active', True)
+    .ExpiresIn(-60)
+    .SignWith(SECRET);
+  LNew    := TCerbero.Refresh(LExpired, SECRET, 3600);
+  LClaims := TCerbero.Decode(LNew, SECRET);
+  Assert.AreEqual('user-refresh', LClaims.Subject);
+  Assert.AreEqual('myapp',        LClaims.Issuer);
+  Assert.AreEqual('admin',        LClaims.Get('role'));
+  Assert.AreEqual(Int64(5),       LClaims.GetInt('level'));
+  Assert.IsTrue(LClaims.GetBool('active'));
+  Assert.IsFalse(LClaims.IsExpired, 'Token renovado nao deve estar expirado');
+end;
+
+procedure TCerberoJWTTests.Refresh_InvalidSignature_RaisesECerberoInvalidSignature;
+var
+  LToken: string;
+begin
+  LToken := TCerbero.Token.Subject('u1').ExpiresIn(-10).SignWith(SECRET);
+  Assert.WillRaise(
+    procedure begin TCerbero.Refresh(LToken, 'wrong-secret', 3600); end,
+    ECerberoInvalidSignature
+  );
 end;
 
 end.

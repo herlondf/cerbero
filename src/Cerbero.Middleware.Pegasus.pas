@@ -3,7 +3,7 @@ unit Cerbero.Middleware.Pegasus;
 // Middleware Pegasus para autenticacao JWT.
 // Requer Pegasus no search path.
 //
-// --- JWT (apenas valida) ---
+// --- JWT (apenas valida, rejeita sem token) ---
 //   App.Use(TCerberoMiddleware.JWT('secret'));
 //
 // --- JWTWithClaims (valida e injeta claims no request) ---
@@ -18,6 +18,15 @@ unit Cerbero.Middleware.Pegasus;
 //     begin
 //       Res.Send(Req.Params.GetOrDefault('jwt_sub', ''));
 //     end);
+//
+// --- JWTOptional (passa adiante mesmo sem token; injeta claims se presente) ---
+//   App.Get('/feed',
+//     TCerberoMiddleware.JWTOptional('secret',
+//       procedure(Req: TPegasusRequest; Claims: ICerberoClaims)
+//       begin
+//         Req.Params.AddOrSet('jwt_sub', Claims.Subject);
+//       end),
+//     ...);
 
 interface
 
@@ -44,6 +53,13 @@ type
     /// antes de invocar Next. Use para armazenar claims no Req.Params ou
     /// qualquer outro mecanismo de contexto da sua aplicacao.
     class function JWTWithClaims(
+      const ASecret: string;
+      const AOnValid: TCerberoClaimsInjector): TPegasusCallback; static;
+
+    /// Variante opcional: se houver Bearer token valido, chama AOnValid e segue.
+    /// Se nao houver token ou o token for invalido, chama Next sem rejeitar.
+    /// Util para rotas publicas que enriquecem contexto quando o usuario esta logado.
+    class function JWTOptional(
       const ASecret: string;
       const AOnValid: TCerberoClaimsInjector): TPegasusCallback; static;
   end;
@@ -121,6 +137,30 @@ begin
       end;
       if Assigned(AOnValid) then
         AOnValid(Req, LClaims);
+      Next;
+    end;
+end;
+
+class function TCerberoMiddleware.JWTOptional(
+  const ASecret: string;
+  const AOnValid: TCerberoClaimsInjector): TPegasusCallback;
+begin
+  Result :=
+    procedure(Req: TPegasusRequest; Res: TPegasusResponse; Next: TNextProc)
+    var
+      LToken: string;
+      LClaims: ICerberoClaims;
+    begin
+      if ExtractBearerToken(Req.Headers.GetOrDefault(HEADER_AUTHORIZATION, ''), LToken) then
+      begin
+        try
+          LClaims := TCerbero.Decode(LToken, ASecret);
+          if Assigned(AOnValid) then
+            AOnValid(Req, LClaims);
+        except
+          // token invalido/expirado em rota opcional — ignora e segue
+        end;
+      end;
       Next;
     end;
 end;

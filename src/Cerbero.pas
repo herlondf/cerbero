@@ -40,6 +40,14 @@ type
     ///   LClaims := TCerbero.UnsafeDecode(LExpiredToken, 'secret');
     ///   LNewToken := TCerbero.Token.Subject(LClaims.Subject).ExpiresIn(3600).SignWith('secret');
     class function UnsafeDecode(const AToken, ASecret: string): ICerberoClaims; static;
+
+    /// Renova um token expirado ou proximo de expirar sem exigir re-autenticacao.
+    /// Copia todas as claims registradas (sub, iss, aud, role, etc.) e emite novo
+    /// token com ANewTTL segundos de validade. Nao copia exp/nbf/iat do original.
+    /// Lanca ECerberoInvalidSignature se a assinatura for invalida.
+    /// Exemplo:
+    ///   LNewToken := TCerbero.Refresh(LExpiredToken, 'secret', 3600);
+    class function Refresh(const AToken, ASecret: string; ANewTTL: Integer): string; static;
   end;
 
 implementation
@@ -62,6 +70,18 @@ end;
 class function TCerbero.UnsafeDecode(const AToken, ASecret: string): ICerberoClaims;
 begin
   Result := TCerberoJWTVerifier.Create(AToken).WithSecret(ASecret).UnsafeClaims;
+end;
+
+class function TCerbero.Refresh(const AToken, ASecret: string; ANewTTL: Integer): string;
+var
+  LClaims: ICerberoClaims;
+  LBuilder: ICerberoTokenBuilder;
+begin
+  LClaims  := UnsafeDecode(AToken, ASecret);
+  LBuilder := Token;
+  LClaims.CopyTo(LBuilder);
+  LBuilder.ExpiresIn(ANewTTL);
+  Result := LBuilder.SignWith(ASecret);
 end;
 
 end.
