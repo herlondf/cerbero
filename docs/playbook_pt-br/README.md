@@ -9,7 +9,7 @@ Documentação técnica da biblioteca de autenticação JWT Cerbero.
 | Seção | Status |
 |-------|--------|
 | [01-visao-geral](./01-visao-geral/) — Arquitetura, objetivos de design e como o Cerbero se encaixa na Família Olímpica | Disponível |
-| [02-jwt](./02-jwt/) — Internos do JWT: header, payload, assinatura, HS256 com a RTL do Delphi | Disponível |
+| [02-jwt](./02-jwt/) — Internos do JWT: header, payload, assinatura, HS256, referência completa da API | Disponível |
 | [03-api-keys](./03-api-keys/) — Geração, rotação e validação de API Keys | Planejado |
 | [04-oauth2](./04-oauth2/) — Fluxos OAuth2 com integração ao Iris | Planejado |
 
